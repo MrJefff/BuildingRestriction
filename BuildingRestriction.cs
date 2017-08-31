@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("BuildingRestriction", "Wulf/lukespragg", "1.4.0", ResourceId = 2124)]
+    [Info("BuildingRestriction", "Wulf/lukespragg", "1.4.1", ResourceId = 2124)]
     [Description("Restricts building height, building in water, and number of foundations")]
     public class BuildingRestriction : RustPlugin
     {
@@ -154,7 +154,7 @@ namespace Oxide.Plugins
             var buildingBlock = entity?.GetComponent<BuildingBlock>();
             if (buildingBlock == null) return;
 
-            if (buildingBlock.WaterFactor() >= config.MaxWaterDepth)
+            if (buildingBlock.WaterFactor() >= config.MaxWaterDepth && config.RestrictWaterDepth)
             {
                 if (config.RefundResources) RefundResources(player, buildingBlock);
                 buildingBlock.Kill(BaseNetworkable.DestroyMode.Gib);
@@ -167,7 +167,7 @@ namespace Oxide.Plugins
             if (buildingIds.ContainsKey(buildingId))
             {
                 var connectingStructure = buildingIds[buildingBlock.buildingID];
-                if (blockName == foundation || blockName == triFoundation)
+                if (blockName == foundation || blockName == triFoundation && config.RestrictFoundations)
                 {
                     var foundationCount = GetCountOf(connectingStructure, foundation);
                     var triFoundationCount = GetCountOf(connectingStructure, triFoundation);
@@ -202,7 +202,7 @@ namespace Oxide.Plugins
                         if (firstFoundation != null)
                         {
                             var height = (float)Math.Round(buildingBlock.transform.position.y - firstFoundation.transform.position.y, 0, MidpointRounding.AwayFromZero);
-                            if (config.MaxBuildHeight <= height)
+                            if (config.MaxBuildHeight <= height && config.RestrictBuildHeight)
                             {
                                 if (config.RefundResources) RefundResources(player, buildingBlock);
                                 buildingBlock.Kill(BaseNetworkable.DestroyMode.Gib);
