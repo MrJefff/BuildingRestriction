@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("BuildingRestriction", "Wulf/lukespragg", "1.5.0", ResourceId = 2124)]
+    [Info("BuildingRestriction", "Wulf/lukespragg", "1.5.1", ResourceId = 2124)]
     [Description("Restricts building height, building in water, number of foundations, and more")]
     public class BuildingRestriction : RustPlugin
     {
@@ -130,10 +130,12 @@ namespace Oxide.Plugins
         private void FindStructures()
         {
             Puts("Searching for structures, this may take awhile...");
-            var foundationBlocks = Resources.FindObjectsOfTypeAll<BuildingBlock>().Where(b => b.name == foundation || b.name == triFoundation).ToList();
+            var foundationBlocks = Resources.FindObjectsOfTypeAll<BuildingBlock>()
+                                            .Where(b => b.PrefabName == foundation || b.PrefabName == triFoundation).ToList();
             foreach (var block in foundationBlocks.Where(b => !buildingIds.ContainsKey(b.buildingID)))
             {
-                var structure = UnityEngine.Object.FindObjectsOfType<BuildingBlock>().Where(b => b.buildingID == block.buildingID && b.name == foundation || b.name == triFoundation);
+                var structure = UnityEngine.Object.FindObjectsOfType<BuildingBlock>()
+                                           .Where(b => b.buildingID == block.buildingID && b.PrefabName == foundation || b.PrefabName == triFoundation);
                 buildingIds[block.buildingID] = structure.ToList();
             }
             Puts($"Search complete! Found {buildingIds.Count} structures");
@@ -219,7 +221,7 @@ namespace Oxide.Plugins
                     if (!allowedBuildingBlocks.Contains(blockName))
                     {
                         BuildingBlock firstFoundation = null;
-                        foreach (var block in connectingStructure.Where(b => !string.IsNullOrEmpty(b.name) && b.name.Contains(triFoundation) || b.name.Contains(foundation)))
+                        foreach (var block in connectingStructure.Where(b => !string.IsNullOrEmpty(b.PrefabName) && b.PrefabName.Equals(triFoundation) || b.PrefabName.Equals(foundation)))
                             firstFoundation = block;
 
                         if (firstFoundation != null)
@@ -303,7 +305,7 @@ namespace Oxide.Plugins
             foreach (var block in blockList)
             {
                 if (block == null) ConnectingStructure.Remove(block);
-                else if (block.name == buildingObject) count++;
+                else if (block.PrefabName == buildingObject) count++;
             }
             return count;
         }
