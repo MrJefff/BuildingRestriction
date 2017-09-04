@@ -2,12 +2,13 @@
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
+using ProtoBuf;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("BuildingRestriction", "Wulf/lukespragg", "1.4.1", ResourceId = 2124)]
-    [Description("Restricts building height, building in water, and number of foundations")]
+    [Info("BuildingRestriction", "Wulf/lukespragg", "1.5.0", ResourceId = 2124)]
+    [Description("Restricts building height, building in water, number of foundations, and more")]
     public class BuildingRestriction : RustPlugin
     {
         #region Configuration
@@ -31,6 +32,12 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Maximum triangle foundations")]
             public int MaxTriFoundations;
 
+            [JsonProperty(PropertyName = "Restrict tool cupboards (true/false)")]
+            public bool RestrictToolCupboards;
+
+            [JsonProperty(PropertyName = "Maximum tool cupboards")]
+            public int MaxToolCupboards;
+
             [JsonProperty(PropertyName = "Restrict water depth (true/false)")]
             public bool RestrictWaterDepth;
 
@@ -49,6 +56,8 @@ namespace Oxide.Plugins
                     RestrictFoundations = true,
                     MaxFoundations = 16,
                     MaxTriFoundations = 24,
+                    RestrictToolCupboards = true,
+                    MaxToolCupboards = 5,
                     RestrictWaterDepth = true,
                     MaxWaterDepth = 0.1,
                     RefundResources = true
@@ -96,6 +105,7 @@ namespace Oxide.Plugins
         #region Initialization
 
         private Dictionary<uint, List<BuildingBlock>> buildingIds = new Dictionary<uint, List<BuildingBlock>>();
+        private Dictionary<uint, List<PlayerNameID>> toolCupboards = new Dictionary<uint, List<PlayerNameID>>();
         private List<string> allowedBuildingBlocks = new List<string>
         {
             "assets/prefabs/building core/floor/floor.prefab",
@@ -105,20 +115,21 @@ namespace Oxide.Plugins
             "assets/prefabs/building core/wall.low/wall.low.prefab"
         };
 
-        private const string triFoundation = "assets/prefabs/building core/foundation.triangle/foundation.triangle.prefab";
         private const string foundation = "assets/prefabs/building core/foundation/foundation.prefab";
+        private const string triFoundation = "assets/prefabs/building core/foundation.triangle/foundation.triangle.prefab";
         private const string permBypass = "buildingrestriction.bypass";
 
         private void OnServerInitialized()
         {
             permission.RegisterPermission(permBypass, this);
+
             FindStructures();
+            FindToolCupboards();
         }
 
         private void FindStructures()
         {
-            buildingIds.Clear();
-            Puts("Searching for structures, this may awhile...");
+            Puts("Searching for structures, this may take awhile...");
             var foundationBlocks = Resources.FindObjectsOfTypeAll<BuildingBlock>().Where(b => b.name == foundation || b.name == triFoundation).ToList();
             foreach (var block in foundationBlocks.Where(b => !buildingIds.ContainsKey(b.buildingID)))
             {
@@ -128,9 +139,18 @@ namespace Oxide.Plugins
             Puts($"Search complete! Found {buildingIds.Count} structures");
         }
 
+        private void FindToolCupboards()
+        {
+            Puts("Searching for tool cupboards, this may take awhile...");
+            var cupboards = UnityEngine.Object.FindObjectsOfType<BuildingPrivlidge>();
+            foreach (var cupboard in cupboards.Where(c => !toolCupboards.ContainsKey(c.net.ID)))
+                toolCupboards.Add(cupboard.net.ID, cupboard.authorizedPlayers);
+            Puts($"Search complete! Found {toolCupboards.Count} tool cupboards");
+        }
+
         #endregion
 
-        #region Game Hooks
+        #region Refund Handling
 
         private void RefundResources(BasePlayer player, BuildingBlock buildingBlock)
         {
@@ -144,6 +164,10 @@ namespace Oxide.Plugins
                 }
             }
         }
+
+        #endregion
+
+        #region Building/Water Handling
 
         private void OnEntityBuilt(Planner planner, GameObject go)
         {
@@ -186,8 +210,7 @@ namespace Oxide.Plugins
                     }
                     else
                     {
-                        var structure = new List<BuildingBlock>(connectingStructure);
-                        structure.Add(buildingBlock);
+                        var structure = new List<BuildingBlock>(connectingStructure) { buildingBlock };
                         buildingIds[buildingId] = structure;
                     }
                 }
@@ -214,8 +237,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                var structure = new List<BuildingBlock>();
-                structure.Add(buildingBlock);
+                var structure = new List<BuildingBlock> { buildingBlock };
                 buildingIds[buildingId] = structure;
             }
         }
@@ -223,8 +245,10 @@ namespace Oxide.Plugins
         private void HandleRemoval(BaseCombatEntity entity)
         {
             var buildingBlock = entity?.GetComponent<BuildingBlock>() ?? null;
-            var blockName = buildingBlock.name ?? buildingBlock.PrefabName;
-            if (buildingBlock == null || blockName != foundation && blockName != triFoundation) return;
+            if (buildingBlock == null) return;
+
+            var blockName = buildingBlock.PrefabName;
+            if (blockName == null || blockName != foundation && blockName != triFoundation) return;
 
             if (buildingIds.ContainsKey(buildingBlock.buildingID))
             {
@@ -234,9 +258,39 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnEntityDeath(BaseCombatEntity entity) => HandleRemoval(entity);
-
         private void OnStructureDemolish(BaseCombatEntity entity) => HandleRemoval(entity);
+
+        #endregion
+
+        #region Tool Cupboard Handling
+
+        private void OnItemDeployed(Deployer deployer, BaseEntity entity)
+        {
+            var cupboard = entity as BuildingPrivlidge;
+            if (cupboard == null) return;
+
+            var player = deployer.ToPlayer();
+            if (config.RestrictToolCupboards && player != null)
+            {
+                var cupboards = toolCupboards.Where(c => c.Value.Contains(new PlayerNameID { userid = player.userID }));
+                if (cupboards.Count() > config.MaxToolCupboards)
+                {
+                    cupboard.Kill();
+                    Message(player, "MaxToolCupboards", config.MaxToolCupboards);
+                }
+            }
+            else
+            {
+                if (!toolCupboards.ContainsKey(cupboard.net.ID)) toolCupboards.Add(cupboard.net.ID, cupboard.authorizedPlayers);
+            }
+        }
+
+        private void OnEntityDeath(BaseCombatEntity entity)
+        {
+            var cupboard = entity as BuildingPrivlidge;
+            if (cupboard != null && toolCupboards.ContainsKey(cupboard.net.ID)) toolCupboards.Remove(cupboard.net.ID);
+            else HandleRemoval(entity);
+        }
 
         #endregion
 
