@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("BuildingRestriction", "Wulf/lukespragg", "1.5.2", ResourceId = 2124)]
+    [Info("BuildingRestriction", "Wulf/lukespragg", "1.5.2")]
     [Description("Restricts building height, building in water, number of foundations, and more")]
     public class BuildingRestriction : RustPlugin
     {
